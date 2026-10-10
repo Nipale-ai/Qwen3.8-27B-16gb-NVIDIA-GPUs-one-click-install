@@ -722,82 +722,32 @@ Decode speed at depth, 4.0 bpw, tokens per second (llama-benchy, 2048-token prom
 
 ### What was measured on a 16 GB card
 
-One RTX 5060 Ti (16311 MiB, 15849 MiB of it usable) on Linux,
-driver 595.71.05, power limit 180 W with the SM clock capped at 2200 MHz, nothing else
-running on the card. ExLlamaV3 1.6.0, the kit's 2.5 bpw quant (`turboderp/Qwen3.8-27B-exl3`,
-branch `2.50bpw`), `--grid_size 15.4 --cache_quant 4 --vision auto`, 90112 tokens of
-context, `EXL3_QC_STAGING=0`. Decode tokens per second with RigMark 1.3.0 (commit
-`218c8ae`), thinking off, seed 42, median of three RigMark runs (five code runs each). The
-*MTP* row is the kit's unpatched
-`tools/serve_openai.py` at the same commit with the same `--grid_size 15.4`,
-`EXL3_QC_STAGING=0` and images, at 98304 tokens of context. It is not the kit's default
-16 GB profile (14.7 GB, 176128 tokens). It was measured earlier the same day on its own
-server start, not alternating with the dflash2 runs, so this is an indirect comparison.
+One RTX 5060 Ti (16311 MiB, 15849 MiB usable) on Linux, driver 595.71.05, power limit
+180 W, SM clock capped at 2200 MHz, nothing else on the card. The kit's 2.5 bpw quant with
+the 16 GB row above. Decode tokens per second, RigMark 1.3.0 (commit `218c8ae`), thinking
+off, seed 42, median of three runs. The *MTP* row is the kit's unpatched server at 98304
+tokens of context, measured earlier the same day on its own server start (not the kit's
+default 16 GB profile):
 
 | | code | prose | structured | C1 |
 | --- | ---: | ---: | ---: | ---: |
 | MTP, 98304 | 65.0 | 39.9 | 73.9 | 55.2 |
 | dflash2, 90112 | 89.6 | 44.0 | 129.0 | 62.4 |
 
-That is +37.9 % code, about +10 % prose, +74.5 % structured and +13.1 % C1. Prose varies by
-about 3 tok/s from run to run, so read it as "not slower". The structured figure is
-RigMark's own "predictable JSON ceiling", not general agent performance; code is the number
-to go by. A depth table (decode speed at 8k, 32k and so on) and a prefill comparison
-against the default were not measured for this row.
++37.9 % on code. Prose varies by about 3 tok/s between runs, so read it as "not slower".
+An alternating check later the same day (both at 90112) gave 64.9 against 94.1 on code;
+2 of its 15 dflash2 code runs fell into a repetition loop (see Limits).
 
-An alternating check on the same card later the same day ran dflash2 and MTP in turns,
-three rounds each, both at 90112 tokens of context with `--grid_size 15.4`,
-`EXL3_QC_STAGING=0` and images on. It points the same way:
-
-| alternating, 90112 | code | prose | structured | C1 |
-| --- | ---: | ---: | ---: | ---: |
-| MTP | 64.9 | 38.8 | 73.9 | 54.4 |
-| dflash2 | 94.1 | 44.3 | 129.0 | 64.7 |
-
-That is +45.0 % code and +14.1 % prose. dflash2 code was higher in this session than in
-the earlier run (94.1 against 89.6, cause not determined); MTP matched (64.9 against
-65.0). In this check 2 of the 15 dflash2 code runs fell into a repetition loop (6054 and
-8192 tokens, at temperature 0). The 8192-token run hit the token limit, and RigMark marked
-its round "14/15 basic output gates passed — do not headline"; the 6054-token run ended on
-its own and passed the gate. Without those two runs code is +43.9 %. MTP had no such run
-in 15, and none of the 35 earlier dflash2 code runs in this setup went past 1687 tokens.
-The cause is not known.
-
-Quality at 90112. The same questions were not run with MTP at this setting. For reference,
-the kit's MTP profile on the same card (176128 tokens, ExLlamaV3 1.4.4, run on 2026-10-06
-with the same questions and the same tool-eval-bench version) scored MMLU 74.0 %
-(148/200), GSM8K 97/100 and agent score 86. That is not a like-for-like run (older engine,
-other context). MMLU and GSM8K ran with thinking off and seed 42:
-
-| MMLU (200) | GSM8K (100) | tool-eval-bench agent score | needle, exact token counts |
-| --- | --- | --- | --- |
-| 74.5 % (149/200) | 96.0 % (96/100) | 87 (118/136 points) | 9/9 |
-
-One GSM8K problem does not reach an answer within the token limit (4096 tokens) and
-counts as wrong. The agent score covers 68 of 69 scenarios: one is left out because the
-server does not enforce `tool_choice: "required"`. The needle prompts were about 8.2k,
-32.8k and 65.5k tokens (counted exactly), each with the number hidden at 10, 50 and 90 %
-depth.
-
-Stability, one server instance for the whole run (about 4.6 h):
-
-- 202 requests (short ones, plus a hidden number at 41986 and at 75532 tokens): none
-  empty, none failed, both numbers found.
-- Prompts of 39987, 80987 and 87987 tokens answered correctly (87987 is the highest
-  tested, 97.6 % of the context), and a 31013-token prompt right after them.
-- A 3-hour soak of 4940 requests, mostly short, with 370 prompts of 29337 tokens and
-  123 of 78157 tokens (86.7 % of the context): no empty reply, no HTTP error, no
-  exception, and the server answered at once afterwards.
-- The VRAM peak over the whole run, sampled every 200 ms with `nvidia-smi`, was
-  15358 MiB, 491 MiB below the 15849 MiB that are usable.
+Quality at 90112 (not run with MTP at this setting): MMLU 74.5 % (149/200), GSM8K 96/100,
+tool-eval-bench agent score 87, needle 9/9 up to about 65.5k tokens. Stability, one server
+for about 4.6 h: a 3-hour soak of 4940 requests with no empty reply and no HTTP error,
+prompts up to 87987 tokens answered, VRAM peak 15358 MiB (491 MiB below usable).
 
 ### Limits
 
-- **Repetition loops.** In the alternating check, 2 of 15 dflash2 code runs repeated
-  numbered copies of a test case until 6054 and 8192 tokens (temperature 0). None in 35
-  earlier dflash2 code runs (20 at 90112, 15 at 98304) and none in 30 MTP runs. The cause
-  is not known; whether it is chance or a robustness problem of the drafter at temperature
-  0 was not measured.
+- **Repetition loops (16 GB).** In the alternating check, 2 of 15 dflash2 code runs
+  repeated a test case until 6054 and 8192 tokens (temperature 0). None in 35 earlier
+  dflash2 code runs and none in 30 MTP runs. The cause is not known.
 - **One card per setting, one OS.** The 4.0 bpw row was measured on a single RTX 5090,
   the 2.5 bpw row on a single RTX 5060 Ti, both on Linux. Nothing was measured on
   other cards of those sizes, on 24 GB cards, or on Windows. The 16 GB row is refused
@@ -809,23 +759,12 @@ Stability, one server instance for the whole run (about 4.6 h):
   for a full context window. No depth table was measured on 16 GB.
 - **Not for 24 GB cards.** On the 4.0 bpw quant it needs about 2.4 GiB more VRAM than the default (1.6.0 + MTP; 2.1 GiB more than the old 1.4.4 default; table above).
   24 GB was not measured; the 5090 run used 24850 MiB.
-- **16 GB: a smaller context, little memory to spare.** The context is 90112 tokens, not
-  the 176128 the kit's MTP profile holds for the same quant with images. The highest
-  prompt tested was 87987 tokens; 87987 to 90111 was not tried. A prompt above the cache
-  is refused with HTTP 400: the site's needle prompts of 92865 tokens, which fit in an
-  earlier 98304-token run, are refused on this setting. That run peaked at 15556 MiB, 293 MiB
-  below the usable 15849 MiB (the aim was at least 400 MiB), so the context was
-  lowered; 90112 was the first value tried below it, and where the edge lies between 90112
-  and 98304 was not mapped. The peak at 90112 was measured with nothing else on the card;
-  anything else that holds VRAM (a desktop, another program) comes out of the 491 MiB
-  left. An earlier test on a 16 GB RTX 5060 Ti with the unquantised bf16 DFlash2 drafter
-  (3.85 GB) fell to a 44032-token context, lost the vision tower and returned a growing
-  number of empty replies; the 4.00 bpw drafter this option downloads is what the 16 GB
-  row was measured with.
-- **16 GB: long prompts take minutes.** At 98304 tokens of context, otherwise the same
-  settings, prefill ran at 587 tok/s for a 39987-token prompt (68.3 s) and 397 tok/s for
-  89987 tokens (227 s). Prefill speed at 90112 was not evaluated, and neither was it
-  compared with `EXL3_QC_STAGING` left on.
+- **16 GB: smaller context, little room.** 90112 tokens instead of the 176128 the MTP
+  profile holds; a longer prompt gets HTTP 400 (highest tested: 87987). Anything else on
+  the card (a desktop, another program) comes out of the 491 MiB left. Long prompts take
+  minutes (227 s for 89987 tokens, measured at 98304 context). An earlier test with the
+  unquantised bf16 drafter fell to 44032 tokens and lost images; the numbers above use the
+  4.00 bpw drafter this option downloads.
 - **Text only.** The measurements above are text benchmarks. Images are enabled
   (`VISION=auto`) as in the default setup.
 - **Only the measured rows.** The kit's 4.0 bpw quant at 262144 on a 32 GB card, and its
